@@ -14,7 +14,7 @@ app.use(express.json());
 // PostgreSQL connection
 const pool = new Pool({
   host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
+  port: parseInt(process.env.DB_PORT, 10),
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
@@ -69,7 +69,7 @@ app.post("/tasks", async (req, res) => {
     status: status ?? "pending",
   };
     const insert = await pool.query(
-    "INSERT INTO tasks (data) VALUES ($datavalues::jsonb) RETURNING id;",
+    "INSERT INTO tasks (data) VALUES ($1::jsonb) RETURNING id;",
     [JSON.stringify(payload)]
   );
     // 2. Increment "taskCount" in Redis
@@ -109,7 +109,7 @@ app.get("/tasks/:id", async (req, res) => {
     const { rows } = await pool.query("SELECT * FROM tasks WHERE id = $1;", [id]);
     if (rows.length > 0) {
       // 2. If found, respond with { id: <id>, data: { ... } }
-      return res.status(200), res.json({ id: rows[0].id, data: rows[0].data });
+      return res.status(200).json({ id: rows[0].id, data: rows[0].data });
     } else {
       // 3. If not found, respond with 404 and { error: "Task not found" }
       return res.status(404).json({ error: "Task not found" });
@@ -131,13 +131,15 @@ app.put("/tasks/:id", async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ error: "Task not found" });
     }
-    const existingData = rows[0].data;
-    const updatedData = { ...existingData, ...req.body };
+    const existingData = rows[0].data || {};
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const updatedData = { ...existingData, ...body };
 
     await pool.query(
-      "UPDATE tasks SET data = $datavalues::jsonb WHERE id = $1;",
-      [JSON.stringify(updatedData), id]
+  "UPDATE tasks SET data = $2::jsonb WHERE id = $1;",
+  [id, JSON.stringify(updatedData)]
     );
+
     return res.json({ id: rows[0].id, data: updatedData });
 
     // 2. Merge request body fields into existing task data
